@@ -7,6 +7,7 @@ from tensorflow.keras.layers import Dense, Flatten, Conv2D, MaxPooling2D, Dropou
 from tensorflow.keras import regularizers
 from tensorflow.keras.optimizers import Adam
 from keras.callbacks import ModelCheckpoint
+from tensorflow.keras.preprocessing.image import ImageDataGenerator
 import numpy as np
 
 # load CIFAR-100 dataset with coarse labels
@@ -26,6 +27,17 @@ test_x = test_x.astype('float32') / 255.0
 train_y = to_categorical(train_y, num_classes=20)
 val_y = to_categorical(val_y, num_classes=20)
 test_y = to_categorical(test_y, num_classes=20)
+
+
+# data augmentation
+datagen = ImageDataGenerator(
+    rotation_range=15,
+    width_shift_range=0.1,
+    height_shift_range=0.1,
+    horizontal_flip=True
+)
+
+datagen.fit(train_x)
 
 model = Sequential()
 model.add(Conv2D(32, (3, 3), activation='relu', padding='same', input_shape=(32, 32, 3)))
