@@ -6,7 +6,7 @@ from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import Dense, Flatten, Conv2D, MaxPooling2D, Dropout
 from tensorflow.keras import regularizers
 from tensorflow.keras.optimizers import Adam
-from keras.callbacks import ModelCheckpoint
+from keras.callbacks import ModelCheckpoint,EarlyStopping
 from tensorflow.keras.preprocessing.image import ImageDataGenerator
 from efficientnet.tfkeras import EfficientNetB0
 import numpy as np
@@ -53,10 +53,11 @@ opt = Adam(lr=0.001)
 # compile the model
 model.compile(loss='categorical_crossentropy', optimizer=opt, metrics=['accuracy'])
 best_model_file = 'cifar100_coarse_model.h5'
-checkpoint = ModelCheckpoint(best_model_file, monitor='val_accuracy', verbose=1, save_best_only=True, mode='max') # saves the best model file
+# checkpoint = ModelCheckpoint(best_model_file, monitor='val_accuracy', verbose=1, save_best_only=True, mode='max') # saves the best model file
+checkpoint = EarlyStopping(monitor='val_accuracy', verbose=1, patience = 2, mode='max', restore_best_weights = True) # saves the best model file
 
 # train the model
-model.fit(train_x, train_y, epochs=150, batch_size=256, validation_data=(val_x, val_y), verbose=1, callbacks=[checkpoint])
+model.fit(train_x, train_y, epochs=20, batch_size=64, validation_data=(val_x, val_y), verbose=1, callbacks=[checkpoint])
 
 # evaluate the model on test set
 test_loss, test_acc = model.evaluate(test_x, test_y)
