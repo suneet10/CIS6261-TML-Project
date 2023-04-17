@@ -6,6 +6,7 @@ from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import Dense, Flatten, Conv2D, MaxPooling2D, Dropout
 from tensorflow.keras import regularizers
 from tensorflow.keras.optimizers import Adam
+from keras.callbacks import ModelCheckpoint
 import numpy as np
 
 # load CIFAR-100 dataset with coarse labels
@@ -47,6 +48,8 @@ opt = Adam(lr=0.001)
 
 # compile the model
 model.compile(loss='categorical_crossentropy', optimizer=opt, metrics=['accuracy'])
+best_model_file = 'cifar100_coarse_model.h5'
+checkpoint = ModelCheckpoint(best_model_file, monitor='val_accuracy', verbose=1, save_best_only=True, mode='max') # saves the best model file
 
 # train the model
 model.fit(train_x, train_y, epochs=15, batch_size=256, validation_data=(val_x, val_y), verbose=1)
@@ -56,7 +59,7 @@ test_loss, test_acc = model.evaluate(test_x, test_y)
 print('Test accuracy:', test_acc)
 
 # save the model and dataset
-model.save('cifar100_coarse_model.h5')
+# model.save('cifar100_coarse_model.h5')
 
 class_names_url = 'https://raw.githubusercontent.com/yonghah/cifar100/master/cifar100_coarse_label_names.txt'
 response = requests.get(class_names_url)
