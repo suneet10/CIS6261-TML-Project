@@ -8,6 +8,7 @@ from tensorflow.keras import regularizers
 from tensorflow.keras.optimizers import Adam
 from keras.callbacks import ModelCheckpoint
 from tensorflow.keras.preprocessing.image import ImageDataGenerator
+from efficientnet.tfkeras import EfficientNetB0
 import numpy as np
 
 # load CIFAR-100 dataset with coarse labels
@@ -40,16 +41,7 @@ datagen = ImageDataGenerator(
 datagen.fit(train_x)
 
 model = Sequential()
-model.add(Conv2D(32, (3, 3), activation='relu', padding='same', input_shape=(32, 32, 3)))
-model.add(Conv2D(32, (3, 3), activation='relu', padding='same'))
-model.add(MaxPooling2D((2, 2)))
-model.add(Dropout(0.25))
-
-model.add(Conv2D(64, (3, 3), activation='relu', padding='same'))
-model.add(Conv2D(64, (3, 3), activation='relu', padding='same'))
-model.add(MaxPooling2D((2, 2)))
-model.add(Dropout(0.25))
-
+model.add(EfficientNetB0(input_shape=(32, 32, 3), weights='imagenet', include_top=False))
 model.add(Flatten())
 model.add(Dense(512, activation='relu'))
 model.add(Dropout(0.5))
