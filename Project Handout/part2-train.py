@@ -52,7 +52,7 @@ best_model_file = 'cifar100_coarse_model.h5'
 checkpoint = ModelCheckpoint(best_model_file, monitor='val_accuracy', verbose=1, save_best_only=True, mode='max') # saves the best model file
 
 # train the model
-model.fit(train_x, train_y, epochs=15, batch_size=256, validation_data=(val_x, val_y), verbose=1)
+model.fit(train_x, train_y, epochs=150, batch_size=256, validation_data=(val_x, val_y), verbose=1, callbacks=[checkpoint])
 
 # evaluate the model on test set
 test_loss, test_acc = model.evaluate(test_x, test_y)
