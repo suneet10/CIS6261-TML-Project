@@ -10,6 +10,7 @@ from keras.callbacks import ModelCheckpoint,EarlyStopping
 from tensorflow.keras.preprocessing.image import ImageDataGenerator
 from efficientnet.tfkeras import EfficientNetB0
 import numpy as np
+import labels
 
 # load CIFAR-100 dataset with coarse labels
 (x_train_all, y_train_all), (x_test, y_test) = cifar100.load_data(label_mode='coarse')
@@ -54,19 +55,19 @@ opt = Adam(lr=0.001)
 model.compile(loss='categorical_crossentropy', optimizer=opt, metrics=['accuracy'])
 best_model_file = 'cifar100_coarse_model.h5'
 # checkpoint = ModelCheckpoint(best_model_file, monitor='val_accuracy', verbose=1, save_best_only=True, mode='max') # saves the best model file
-checkpoint = EarlyStopping(monitor='val_accuracy', verbose=1, patience = 2, mode='max', restore_best_weights = True) # saves the best model file
+checkpoint = EarlyStopping(monitor='val_accuracy', verbose=1, patience = 3, mode='max', restore_best_weights = True) # saves the best model file
 
 # train the model
-model.fit(train_x, train_y, epochs=20, batch_size=64, validation_data=(val_x, val_y), verbose=1, callbacks=[checkpoint])
+model.fit(train_x, train_y, epochs=200, batch_size=256, validation_data=(val_x, val_y), verbose=1, callbacks=[checkpoint])
 
 # evaluate the model on test set
 test_loss, test_acc = model.evaluate(test_x, test_y)
 print('Test accuracy:', test_acc)
 
 # save the model and dataset
-# model.save('cifar100_coarse_model.h5')
+model.save('cifar100_coarse_model.h5')
 
-class_names_url = 'https://raw.githubusercontent.com/yonghah/cifar100/master/cifar100_coarse_label_names.txt'
-response = requests.get(class_names_url)
-class_names = response.text.splitlines()
+class_names = labels.get_labels()
+print(class_names)
 np.savez('cifar100_coarse_data.npz', train_x=train_x, train_y=train_y, val_x=val_x, val_y=val_y, test_x=test_x, test_y=test_y, labels=class_names)
+
