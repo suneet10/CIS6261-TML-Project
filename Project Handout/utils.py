@@ -77,7 +77,7 @@ def plot_images(im, dim_x=32, dim_y=32, one_row=False, out_fp='out.png', save=Fa
     - (val_x, val_y) and (test_x, test_y) are disjoint and were not used during training.
     - labels are the class labels
 """
-def load_data(fp='./data.npz'):
+def load_data(fp='./cifar100_coarse_data.npz'):
     with np.load(fp) as data:
         train_x = data['train_x']
         train_y = data['train_y']
@@ -93,7 +93,7 @@ def load_data(fp='./data.npz'):
     assert np.amax(train_x) <= 1 and np.amax(test_x) <= 1 and np.amax(val_x) <= 1
     assert np.amax(train_x) >= 0 and np.amax(test_x) >= 0 and np.amax(val_x) >= 0
 
-    assert labels.shape[0] == 10 and labels.shape[0] == train_y.shape[1]
+    assert labels.shape[0] == 20 and labels.shape[0] == train_y.shape[1]
 
     print('Loaded dataset --- train_x shape: {}, train_y shape: {}, labels: {}'.format(train_x.shape, train_y.shape, labels))
     

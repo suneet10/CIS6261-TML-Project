@@ -14,6 +14,7 @@ import numpy as np
 
 import sklearn
 from sklearn.metrics import confusion_matrix
+from efficientnet.tfkeras import EfficientNetB0
 
 # we'll use tensorflow and keras for neural networks
 import tensorflow as tf
@@ -22,6 +23,9 @@ import tensorflow.keras as keras
 
 import utils # we need this
 import attacks
+import nets
+import pandas as pd
+import openpyxl
 
 import cv2# for the denoising defenses
     
@@ -52,8 +56,7 @@ def plot_adversarial_example(pred_fn, orig_x, adv_x, labels, fname='adv_exp.png'
 ## Basic prediction function
 """
 def basic_predict(model, x):
-    print(model(x))
-    return model(x)
+    return model.predict(x)
 
 
 #### TODO: implement your defense(s) as a new prediction function
@@ -64,11 +67,14 @@ def basic_predict(model, x):
 def Gaussian_blur_filter(model, x):
 
     ## NEED TO INCLUDE PARAMETERS AS ARGUMETS TO THE FUNCTION (KSIZE AND SIGMAX, SIGMAY)
-    dst = np.array([cv2.GaussianBlur(np.uint8(image*255), (3, 3), 10, 10)/255 for image in x])
+    dst = np.array([cv2.GaussianBlur(np.uint8(image*255), (5, 5), 1, 1)/255 for image in x])
 
     ## UNCOMMENT FOR IMAGE COMPARISON
     # cv2.imshow("BEFORE", x[0])
     # cv2.imshow("AFTER", dst[0])
+
+    # cv2.imwrite('./figures/gaussian_blur_before.jpg', x[0]*255)
+    # cv2.imwrite('./figures/gaussian_blur_after.jpg', dst[0]*255)
     # cv2.waitKey(0)
 
     return model(dst)
@@ -84,6 +90,9 @@ def Median_blur_filter(model, x):
     # # UNCOMMENT FOR IMAGE COMPARISON
     # cv2.imshow("BEFORE", x[0])
     # cv2.imshow("AFTER", dst[0])
+
+    # cv2.imwrite('./figures/median_blur_before.jpg', x[0]*255)
+    # cv2.imwrite('./figures/median_blur_after.jpg', dst[0]*255)
     # cv2.waitKey(0)
     
     return model(dst)
@@ -100,6 +109,9 @@ def Laplace_noise(model,x, sigma=20):
     # # UNCOMMENT FOR IMAGE COMPARISON
     # cv2.imshow("BEFORE", x[0])
     # cv2.imshow("AFTER", x_noisy_clipped[0].numpy())
+
+    # cv2.imwrite('./figures/laplace_before.jpg', x[0]*255)
+    # cv2.imwrite('./figures/laplace_after.jpg', x_noisy_clipped[0].numpy()*255)
     # cv2.waitKey(0)
     return model(x_noisy_clipped)
 
@@ -117,6 +129,9 @@ def Gaussian_noise(model, x, sigma=20):
     # # UNCOMMENT FOR IMAGE COMPARISON
     # cv2.imshow("BEFORE", x[0])
     # cv2.imshow("AFTER", x_noisy_clipped[0].numpy())
+
+    # cv2.imwrite('./figures/gauss_before.jpg', x[0]*255)
+    # cv2.imwrite('./figures/gauss_after.jpg', x_noisy_clipped[0].numpy()*255)
     # cv2.waitKey(0)
     return model(x_noisy_clipped)
 
@@ -124,31 +139,34 @@ def Gaussian_noise(model, x, sigma=20):
 """
 ## Non-local Means Denoising algorithm for smoothing
 """
-def deNoise_filter(model, x):
+def deNoise_filter(model, x, f,c,k):
 
     ## NEED TO ADD PARAMETERS TO THE FUNCTIONA ARGUMENTS FOR DENOISING
-    dst = np.array([cv2.fastNlMeansDenoisingColored(np.uint8(image*255),None,10,10,7,21)/255 for image in x])
+    dst = np.array([cv2.fastNlMeansDenoisingColored(np.uint8(image*255),None,f,c,k,21)/255 for image in x])
 
     # # UNCOMMENT FOR IMAGE COMPARISON
     # cv2.imshow("BEFORE", x[0])
     # cv2.imshow("AFTER", dst[0])
+
+    # cv2.imwrite('./figures/nonLocal_before.jpg', x[0]*255)
+    # cv2.imwrite('./figures/nonLocal_after.jpg', dst[0]*255)
     # cv2.waitKey(6000)
-    return model(dst)
+    return model.predict(dst)
 
 """
 ## Non-local Means Denoising algorithm for smoothing
 """
-def combined_defense(model,x,sigma=10):
+def combined_defense(model,x,sigma=8):
     noise = np.random.laplace(0.0,sigma,size=tf.shape(x))
 
-    deNoise = np.array([cv2.fastNlMeansDenoisingColored(np.uint8(image*255),None,10,10,7,21)/255 for image in x])
+    deNoise = np.array([cv2.fastNlMeansDenoisingColored(np.uint8(image*255),None,8,1,7,21)/255 for image in x])
     x_noisy = deNoise*255 + noise
     x_noisy_clipped = tf.clip_by_value(x_noisy, 0, 255.0)/255
     # # UNCOMMENT FOR IMAGE COMPARISON
     # cv2.imshow("BEFORE", x[0])
     # cv2.imshow("AFTER", dst[0])
     # cv2.waitKey(0)
-    return model(x_noisy_clipped)
+    return model.predict(x_noisy_clipped)
 
 
 ######### Membership Inference Attacks (MIAs) #########
@@ -156,25 +174,70 @@ def combined_defense(model,x,sigma=10):
 """
 ## A very simple threshold-based MIA
 """
-def simple_conf_threshold_mia(predict_fn, x, thresh=0.9999):   
+def simple_conf_threshold_mia(predict_fn, x, y=None, thresh=0.9999, val_x=None, val_y=None):   
     pred_y = predict_fn(x)
     pred_y_conf = np.max(pred_y, axis=-1)
     return (pred_y_conf > thresh).astype(int)
 
-
     
-#### TODO [optional] implement new MIA attacks.
-#### Put your code here
+def shokri_attack(predict_fn, x, y=None, thresh=None, val_x=None, val_y=None):
+    from sklearn.linear_model import LogisticRegression
+    attack_model_fn = lambda : LogisticRegression(solver='lbfgs')
+    target_model_train_fn = lambda: nets.get_simple_classifier(num_hidden=128)
+    create_model_fn = target_model_train_fn
+    train_model_fn = lambda model, x, y: nets.train_model(model, x, y, None, None, 500, verbose=False)
+    val_x = val_x.reshape(val_x.shape[0], 32*32*3)
+    attack_models = attacks.shokri_attack_models(val_x, val_y, 2499, create_model_fn, train_model_fn, num_shadow=20, attack_model_fn=attack_model_fn)
 
-  
+    num_classes = y.shape[1]
+    assert len(attack_models) == num_classes
+    y_targets_labels = np.argmax(y, axis=-1)
+    in_or_out_pred = np.zeros((x.shape[0],))
+
+    pv = predict_fn(x)
+
+    assert pv.shape[0] == y_targets_labels.shape[0]
+
+    for i in range(0, pv.shape[0]):
+        label = y_targets_labels[i]
+        assert 0 <= label < num_classes
+
+        am = attack_models[label]
+        in_or_out_pred[i] = am.predict(pv[i,:].reshape(1,-1))
+
+    return in_or_out_pred
+
 ######### Adversarial Examples #########
 
   
 #### TODO [optional] implement new adversarial examples attacks.
 #### Put your code here  
 #### Note: you can have your code save the data to file so it can be loaded and evaluated in Main() (see below).
-def create_adversarial_fgsm_examples():
-    print("created fgsm adversarial examples")
+def create_adversarial_fgsm_examples(model, test_x, test_y, model_name, batch_size=100):
+    samples_fp = 'advexp_{}_1.npz'.format(model_name)
+
+    if not os.path.isfile(samples_fp):
+        x_benign, x_adv_samples, correct_labels = next(attacks.fgsm_adversary_generator(model, test_x, test_y, batch_size, alpha=0))
+        np.savez_compressed(samples_fp, benign_x=x_benign, benign_y=correct_labels, adv_x=x_adv_samples)
+    
+    samples_fp = 'advexp_{}_2.npz'.format(model_name)
+
+    if not os.path.isfile(samples_fp):
+        x_benign, x_adv_samples, correct_labels = next(attacks.fgsm_adversary_generator(model, test_x, test_y, batch_size, alpha=0.01))
+        np.savez_compressed(samples_fp, benign_x=x_benign, benign_y=correct_labels, adv_x=x_adv_samples)
+    
+    samples_fp = 'advexp_{}_3.npz'.format(model_name)
+
+    if not os.path.isfile(samples_fp):
+        x_benign, x_adv_samples, correct_labels = next(attacks.fgsm_adversary_generator(model, test_x, test_y, batch_size, alpha=0.02))
+        np.savez_compressed(samples_fp, benign_x=x_benign, benign_y=correct_labels, adv_x=x_adv_samples)
+
+    samples_fp = 'advexp_{}_4.npz'.format(model_name)
+
+    if not os.path.isfile(samples_fp):
+        x_benign, x_adv_samples, correct_labels = next(attacks.noise_adversary_generator(model, test_x, test_y, batch_size, alpha=0.01))
+        np.savez_compressed(samples_fp, benign_x=x_benign, benign_y=correct_labels, adv_x=x_adv_samples)
+
     return
 
    
@@ -190,6 +253,12 @@ if __name__ == "__main__":
     print('### TF Keras version: ' + keras.__version__)
     print('------------')
 
+    
+    model_name = sys.argv[1]
+
+    f_filter = int(sys.argv[2])
+    c_filter = int(sys.argv[3])
+    k_size = int(sys.argv[4])
 
     # global parameters to control behavior of the pre-processing, ML, analysis, etc.
     seed = 42
@@ -206,10 +275,10 @@ if __name__ == "__main__":
     
     train_x, train_y, test_x, test_y, val_x, val_y, labels = utils.load_data()
     num_classes = len(labels)
-    assert num_classes == 10 # cifar10
+    assert num_classes == 20 # cifar10
     
     ### load the target model (the one we want to protect)
-    target_model_fp = './target-model.h5'
+    target_model_fp = './cifar100_coarse_model.h5'
 
     model, _ = utils.load_model(target_model_fp)
     ## model.summary() ## you can uncomment this to check the model architecture (ResNet)
@@ -217,18 +286,18 @@ if __name__ == "__main__":
     st_after_model = time.time()
         
     ### let's evaluate the raw model on the train and test data
-    train_loss, train_acc = model.evaluate(train_x, train_y, verbose=0)
-    test_loss, test_acc = model.evaluate(test_x, test_y, verbose=0)
-    print('[Raw Model] Train accuracy: {:.2f}% --- Test accuracy: {:.2f}%'.format(100*train_acc, 100*test_acc))
+    train_loss, train_acc_raw = model.evaluate(train_x, train_y, verbose=0)
+    test_loss, test_acc_raw = model.evaluate(test_x, test_y, verbose=0)
+    print('[Raw Model] Train accuracy: {:.2f}% --- Test accuracy: {:.2f}%'.format(100*train_acc_raw, 100*test_acc_raw))
     
     ### let's wrap the model prediction function so it could be replaced to implement a defense
     # predict_fn = lambda x: basic_predict(model, x)
     # predict_fn = lambda x: Gaussian_blur_filter(model, x)
     # predict_fn = lambda x: Median_blur_filter(model, x)
-    # predict_fn = lambda x: deNoise_filter(model, x)
+    predict_fn = lambda x: deNoise_filter(model, x, f_filter, c_filter, k_size)
     # predict_fn = lambda x: Gaussian_noise(model, x)
     # predict_fn = lambda x: Laplace_noise(model, x)
-    predict_fn = lambda x: combined_defense(model, x)
+    # predict_fn = lambda x: combined_defense(model, x)
     
     ### now let's evaluate the model with this prediction function
     pred_y = predict_fn(train_x)
@@ -242,6 +311,7 @@ if __name__ == "__main__":
     ### evaluating the privacy of the model wrt membership inference
     mia_eval_size = 2000
     mia_eval_data_x = np.r_[train_x[0:mia_eval_size], test_x[0:mia_eval_size]]
+    mia_eval_data_y = np.r_[train_y[0:mia_eval_size], test_y[0:mia_eval_size]]
     mia_eval_data_in_out = np.r_[np.ones((mia_eval_size,1)), np.zeros((mia_eval_size,1))]
     assert mia_eval_data_x.shape[0] == mia_eval_data_in_out.shape[0]
     
@@ -249,11 +319,13 @@ if __name__ == "__main__":
     print('\n------------ Privacy Attacks ----------')
     mia_attack_fns = []
     mia_attack_fns.append(('Simple MIA Attack', simple_conf_threshold_mia))
+    mia_attack_fns.append(('Shokri MIA Attack', shokri_attack))
     
+    dfPriv = pd.DataFrame()
     for i, tup in enumerate(mia_attack_fns):
         attack_str, attack_fn = tup
         
-        in_out_preds = attack_fn(predict_fn, mia_eval_data_x).reshape(-1,1)
+        in_out_preds = attack_fn(predict_fn, mia_eval_data_x, mia_eval_data_y, val_x=val_x, val_y=val_y).reshape(-1,1)
         assert in_out_preds.shape == mia_eval_data_in_out.shape, 'Invalid attack output format'
         
         cm = confusion_matrix(mia_eval_data_in_out, in_out_preds, labels=[0,1])
@@ -265,50 +337,19 @@ if __name__ == "__main__":
         attack_recall = tp / (tp + fn)
         attack_f1 = tp / (tp + 0.5*(fp + fn))
         print('{} --- Attack accuracy: {:.2f}%; advantage: {:.3f}; precision: {:.3f}; recall: {:.3f}; f1: {:.3f}'.format(attack_str, attack_acc*100, attack_adv, attack_precision, attack_recall, attack_f1))
-    
-    
-    # if sys.argv[1]=='createAdversaries':
-        # create_adversarial_fgsm_examples()
-        # samples_fp = 'fgsmk_samples_eps{}.npz'.format(20)
-        # # Selecting random image for testing
-        # rand_idx = 3234
-        # image = train_x[rand_idx].reshape((1, 32, 32, 3))
-        # label = train_y[rand_idx]
-
-        # # print(f'Prediction from CNN: {labels[np.where(label==1)[0][0]]}')
-        # # plt.figure(figsize=(3,3))
-        # # plt.imshow(image.reshape((32, 32, 3)))
-        # # plt.show()
-    
-
-
-        # # Adding the adversary noise to image
-        # perturbations = attacks.generate_adversary(model,image,label).numpy()
-        # adversarial = image + (perturbations * 0.05)
-
-        # fig, (ax1,ax2) = plt.subplots(1, 2, sharey=True)
-        # ax1.imshow(image.reshape(32,32, 3))
-        # ax1.set_title("Original Image")
-        # ax2.imshow(adversarial.reshape(32,32, 3))
-        # ax2.set_title("Image with Adversary")
-        # plt.show()
-        # print(f'Normal Image Prediction: {labels[model.predict(image).argmax()]}')
-        # print(f"Adversary Prediction: {labels[model.predict(adversarial).argmax()]}")
-
-        # samples_fp = 'fgsmk_samples_eps{}.npz'.format(20)
-        # x_benign, x_adv_samples, correct_labels = next(attacks.adversary_generator(model, train_x, train_y, 100))
-        
-        # print("CORRECT LABELS", correct_labels)
-        # np.savez_compressed(samples_fp, benign_x=x_benign, benign_y=correct_labels, adv_x=x_adv_samples)
+        dfPriv=dfPriv.append({"Accuracy": attack_acc*100, "Advantage": attack_adv, "Precision": attack_precision, "Recall": attack_recall, "F1": attack_f1}, ignore_index=True)
 
 
     ### evaluating the robustness of the model wrt adversarial examples
     print('\n------------ Adversarial Examples ----------')
+    create_adversarial_fgsm_examples(model, test_x, test_y, model_name)
     advexp_fps = []
-    advexp_fps.append(('Adversarial examples attack0', 'advexp0.npz'))
-    advexp_fps.append(('Adversarial examples attack1', 'advexp1.npz'))
-    # advexp_fps.append(('Adversarial examples attack2', 'fgsmk_samples_eps20.npz'))
+    advexp_fps.append(('Adversarial examples attack0', 'advexp_superclass_1.npz'))
+    advexp_fps.append(('Adversarial examples attack1', 'advexp_superclass_2.npz'))
+    advexp_fps.append(('Adversarial examples attack2', 'advexp_superclass_3.npz'))
+    advexp_fps.append(('Adversarial examples attack3', 'advexp_superclass_4.npz'))
 
+    dfAdv = pd.DataFrame()
     for i, tup in enumerate(advexp_fps):
         attack_str, attack_fp = tup
         
@@ -316,16 +357,21 @@ if __name__ == "__main__":
         adv_x = data['adv_x']
         benign_x = data['benign_x']
         benign_y = data['benign_y']
+
+        fig, (ax1,ax2) = plt.subplots(1, 2, sharey=True)
+        ax1.imshow(benign_x[0].reshape(32,32, 3))
+        ax1.set_title("Original Image")
+        ax2.imshow(adv_x[0].reshape(32,32, 3))
+        ax2.set_title("Image with Adversary")
+        plt.show()
         
         benign_pred_y = predict_fn(benign_x)
-        print(benign_y[0:10], "HELLO", np.argmax(benign_pred_y[0:10], axis=-1))
         benign_acc = np.mean(benign_y == np.argmax(benign_pred_y, axis=-1))
         
         adv_pred_y = predict_fn(adv_x)
-        # print(benign_y[0:10], adv_pred_y[0:10])
         adv_acc = np.mean(benign_y == np.argmax(adv_pred_y, axis=-1))
 
-        
+        dfAdv=dfAdv.append({"Benign acc": benign_acc*100, "Advantage": adv_acc}, ignore_index=True)
         print('{} --- Benign accuracy: {:.2f}%; adversarial accuracy: {:.2f}%'.format(attack_str, 100*benign_acc, 100*adv_acc))
         
     print('------------\n')
@@ -334,4 +380,15 @@ if __name__ == "__main__":
     
     print('Elapsed time -- total: {:.1f} seconds (data & model loading: {:.1f} seconds)'.format(et - st, st_after_model - st))
 
+    dfRaw = pd.DataFrame([[train_acc_raw*100, test_acc_raw*100]], index=['raw'], columns=["Train Acc", "Test Acc"])
+    dfModel = pd.DataFrame([[train_acc*100, test_acc*100]], index=['model'], columns=["Train Acc", "Test Acc"])
+    # df = pd.DataFrame()
+    print(dfRaw)
+    print(dfPriv)
+    path = 'data.xlsx'
+    with pd.ExcelWriter(path) as writer:
+        dfRaw.to_excel(writer, sheet_name='raw_{}'.format(model_name))
+        dfModel.to_excel(writer, sheet_name='model_{}'.format(model_name))
+        dfPriv.to_excel(writer, sheet_name='privacy_{}'.format(model_name))
+        dfAdv.to_excel(writer, sheet_name='adversary_{}'.format(model_name))
     sys.exit(0)
