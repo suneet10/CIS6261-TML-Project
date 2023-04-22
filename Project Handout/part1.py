@@ -278,7 +278,7 @@ if __name__ == "__main__":
     assert num_classes == 20 # cifar10
     
     ### load the target model (the one we want to protect)
-    target_model_fp = './cifar100_coarse_model.h5'
+    target_model_fp = './Models/cifar100_coarse_ENB0.h5'
 
     model, _ = utils.load_model(target_model_fp)
     ## model.summary() ## you can uncomment this to check the model architecture (ResNet)
