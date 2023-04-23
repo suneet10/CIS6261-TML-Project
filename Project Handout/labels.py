@@ -5,14 +5,14 @@ def get_labels():
             dict = pickle.load(fo, encoding='bytes')
         return dict
 
-    label_names = unpickle("meta")
+    label_names = unpickle("batches.meta")
 
     # print(label_names)
 
     labels = []
     f = open("label_data_names.txt", "w")
-    f.write("coarse_label_names\n")
-    for label in label_names[b'coarse_label_names']:
+    f.write("fine_label_names\n")
+    for label in label_names[b'label_names']:
         labels.append(label)
 
     return labels
